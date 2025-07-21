@@ -1,27 +1,41 @@
 name: Build
 on:
   workflow_dispatch:
-      inputs:
-        package_name:
-          description: "Package name of the game:"
-          required: true
+    inputs:
+      package_name:
+        description: "Package name of the game:"
+        required: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PKG_NAME: ${{ github.event.inputs.package_name }}
+
     steps:
     - uses: actions/checkout@v4
+
     - uses: actions/setup-java@v4
       with:
         distribution: temurin
-        java-version: 11
+        java-version: 17        # ← 如需 JDK 11 可自行调回
         cache: gradle
-    - run: |
+
+    - name: Patch & Build
+      run: |
+        set -euo pipefail       # 脚本遇错立即退出
         chmod +x ./gradlew
-        sed -i 's/moduleDescription = "/moduleDescription = "(${{ github.event.inputs.package_name }}) /g' module.gradle
-        sed -i "s/com.game.packagename/${{ github.event.inputs.package_name }}/g" module/src/main/cpp/game.h
+
+        # ① 给 moduleDescription 加包名
+        sed -i -E "s|(moduleDescription *= *\")|\1(${PKG_NAME}) |" module.gradle
+
+        # ② C/C++ 头文件替换包名
+        sed -i "s#com.game.packagename#${PKG_NAME}#g" module/src/main/cpp/game.h
+
+        # ③ 编译 Magisk 模块
         ./gradlew :module:assembleRelease
+
     - uses: actions/upload-artifact@v4
       with:
-        name: zygisk-il2cppdumper
+        name: zygisk-il2cppdumper-${{ env.PKG_NAME }}
         path: out/magisk_module_release/
